@@ -122,18 +122,6 @@ Here’s a `README.md` file for your project:
 
 This project leverages a Long Short-Term Memory (LSTM) neural network to predict future rainfall based on historical weather data. LSTMs are well-suited for this task due to their ability to capture temporal dependencies in sequential data.
 
----
-
-## **Table of Contents**
-1. [Overview](#overview)
-2. [Theory](#theory)
-3. [Model Architecture](#model-architecture)
-4. [Data Preprocessing](#data-preprocessing)
-5. [Application](#application)
-6. [Results](#results)
-7. [Limitations](#limitations)
-8. [Future Enhancements](#future-enhancements)
-9. [How to Run](#how-to-run)
 
 ---
 
