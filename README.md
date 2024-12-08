@@ -51,14 +51,19 @@ Date,minTemp,Rainfall
 
 ---
 
-### **Output**
+#### **Output**
 
-#### **Plots**
-1. **Training and Validation Loss**:
-   - Visualizes model learning over epochs.
+he output of the provided code includes the following:
 
-2. **Historical vs Forecasted Rainfall**:
-   - Compares actual rainfall with predicted values.
+1. **Training and Validation Loss Plot:**
+        This shows the loss (mean squared error) during training and validation phases over 50 epochs. The graph indicates that the model has learned over time and stabilized, but the validation loss remains consistently lower than the training loss.
+
+2. **Mean Squared Error (MSE):**
+        The MSE on the test dataset is approximately 1.014. This indicates the average squared difference between the predicted and actual rainfall values. A lower MSE would indicate better model performance.
+
+3. **Historical vs Forecasted Rainfall Plot:**
+        This graph compares the historical rainfall data with the forecasted rainfall for the next 30 days. The forecast uses the model's predictions and shows the trends for future rainfall values based on sequential forecasting.
+
 
 #### **Metrics**
 - `Mean Squared Error`: A quantitative measure of model performance.
