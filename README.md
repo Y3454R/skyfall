@@ -114,11 +114,14 @@ pip install tensorflow numpy pandas matplotlib scikit-learn
 This project utilizes TensorFlow and Keras for building deep learning models.
 
 
-Here’s a `README.md` file for your project:
+---
+
 
 ---
 
-# **Rainfall Prediction Using LSTM**
+# **Theory**
+
+## **Rainfall Prediction Using LSTM**
 
 This project leverages a Long Short-Term Memory (LSTM) neural network to predict future rainfall based on historical weather data. LSTMs are well-suited for this task due to their ability to capture temporal dependencies in sequential data.
 
@@ -127,10 +130,6 @@ This project leverages a Long Short-Term Memory (LSTM) neural network to predict
 
 ## **Overview**
 Rainfall prediction is a critical task in weather forecasting, agriculture, water resource management, and disaster risk reduction. This project uses LSTMs to predict rainfall based on historical rainfall and temperature data, addressing the challenges of sequential dependence, seasonality, and noise in time series data.
-
----
-
-## **Theory**
 
 ### **Why LSTM?**
 - Rainfall data exhibits long-term dependencies, irregular patterns, and non-linearity.
