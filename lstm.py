@@ -1,143 +1,232 @@
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import numpy as np
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.layers import LSTM, Dense
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
+# Step 1: Factory to create different components
+class ComponentFactory:
+    @staticmethod
+    def create_data_loader(file_path):
+        return DataLoader(file_path)
 
-class RainfallPredictor:
-    def __init__(self, file_path, scale_type='standard', test_size=0.2, random_state=42):
-        """
-        Initialize the predictor with dataset file path, scaling type, and test/train split settings.
-        """
+    @staticmethod
+    def create_data_preprocessor():
+        return DataPreprocessor()
+
+    @staticmethod
+    def create_model_builder():
+        return ModelBuilder()
+
+    @staticmethod
+    def create_trainer(model):
+        return Trainer(model)
+
+    @staticmethod
+    def create_forecaster(model):
+        return Forecaster(model)
+
+
+# New Class: DataLoader
+class DataLoader:
+    def __init__(self, file_path):
         self.file_path = file_path
-        self.scale_type = scale_type
-        self.test_size = test_size
-        self.random_state = random_state
-        self.scaler_temp = None
-        self.scaler_rainfall = None
-        self.model = None
-        self.history = None
 
     def load_and_preprocess_data(self):
         """
-        Load the dataset, scale the features, and create lagged features.
+        Load and preprocess data for training and testing.
         """
+        # Load data
         df = pd.read_csv(self.file_path)
 
-        # Select appropriate scaler
-        self.scaler_temp = StandardScaler() if self.scale_type == 'standard' else MinMaxScaler()
-        self.scaler_rainfall = StandardScaler() if self.scale_type == 'standard' else MinMaxScaler()
+        # Convert Date column to datetime
+        df['Date'] = pd.to_datetime(df['Date'])
 
-        # Scale features
-        df['minTemp'] = self.scaler_temp.fit_transform(df[['minTemp']])
-        df['Rainfall'] = self.scaler_rainfall.fit_transform(df[['Rainfall']])
+        # Set Date column as index
+        df.set_index('Date', inplace=True)
 
-        # Create lagged features
+        # Handle missing values
+        df.fillna(method='ffill', inplace=True)  # Forward fill for missing values
+
+        # Resample data to ensure consistency (e.g., daily frequency)
+        df = df.resample('D').mean()  # Or use 'M' for monthly, 'W' for weekly
+
+        # Scale data
+        scaler = StandardScaler()
+        df[['minTemp', 'Rainfall']] = scaler.fit_transform(df[['minTemp', 'Rainfall']])
+
+        # Create lag features
         df['minTemp_lag_1'] = df['minTemp'].shift(1)
         df['RainFall_lag_1'] = df['Rainfall'].shift(1)
+
+        # Drop rows with NaN values created by shifting
         df.dropna(inplace=True)
 
-        # Define features (X) and target (y)
-        X = df[['minTemp_lag_1', 'RainFall_lag_1']].values
-        y = df['Rainfall'].values
-
         # Split data into train and test sets
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=self.test_size, random_state=self.random_state
-        )
+        train = df.iloc[:int(0.8 * len(df))]
+        test = df.iloc[int(0.8 * len(df)):]
 
-        # Reshape for LSTM
-        X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
-        X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+        # Define features and target variable
+        X_train = train[['minTemp_lag_1', 'RainFall_lag_1']]
+        y_train = train['Rainfall']
+        X_test = test[['minTemp_lag_1', 'RainFall_lag_1']]
+        y_test = test['Rainfall']
 
-        return X_train, X_test, y_train, y_test
+        return X_train, X_test, y_train, y_test, df
 
-    def build_model(self, input_shape, dropout_rate=0.2, lstm_units=50):
-        """
-        Build and compile the LSTM model.
-        """
-        self.model = Sequential()
-        self.model.add(LSTM(lstm_units, activation='relu', input_shape=input_shape)) # why relu?
-        self.model.add(Dropout(dropout_rate))  # Add dropout to prevent overfitting # why?
-        self.model.add(Dense(1))  # Output layer
-        self.model.compile(optimizer='adam', loss='mse')
 
-    def train(self, X_train, y_train, epochs=20, batch_size=32):
+# Step 2: Data Preprocessor
+class DataPreprocessor:
+    def prepare_data(self, X_train, X_test):
         """
-        Train the LSTM model on the given training data.
+        Reshape data for LSTM input: [samples, time steps, features].
         """
-        self.history = self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
+        X_train_reshaped = np.array(X_train).reshape((X_train.shape[0], 1, X_train.shape[1]))
+        X_test_reshaped = np.array(X_test).reshape((X_test.shape[0], 1, X_test.shape[1]))
+        return X_train_reshaped, X_test_reshaped
+
+
+# Step 3: Model Builder
+class ModelBuilder:
+    def build_lstm_model(self, input_shape):
+        """
+        Build and compile an LSTM model.
+        """
+        model = Sequential()
+        model.add(LSTM(50, activation='relu', input_shape=input_shape))
+        model.add(Dense(1))
+        model.compile(optimizer='adam', loss='mse')
+        return model
+
+
+# Step 4: Trainer
+class Trainer:
+    def __init__(self, model):
+        self.model = model
+
+    def train(self, X_train, y_train, epochs, validation_split=0.2):
+        """
+        Train the model with optional validation split.
+        """
+        history = self.model.fit(X_train, y_train, epochs=epochs, validation_split=validation_split, verbose=1)
+        return history
 
     def evaluate(self, X_test, y_test):
         """
-        Make predictions and evaluate the model using various metrics.
+        Evaluate the model using Mean Squared Error (MSE).
         """
-        # Predict
         y_pred = self.model.predict(X_test)
+        mse = mean_squared_error(y_test, y_pred)
+        print(f"Mean Squared Error: {mse}")
+        return mse, y_pred
 
-        # Rescale predictions and actual values
-        y_test_rescaled = self.scaler_rainfall.inverse_transform(y_test.reshape(-1, 1))
-        y_pred_rescaled = self.scaler_rainfall.inverse_transform(y_pred)
-
-        # Metrics
-        mse = mean_squared_error(y_test_rescaled, y_pred_rescaled)
-        mae = mean_absolute_error(y_test_rescaled, y_pred_rescaled)
-        r2 = r2_score(y_test_rescaled, y_pred_rescaled)
-
-        print(f"Mean Squared Error (Rescaled): {mse}")
-        print(f"Mean Absolute Error (Rescaled): {mae}")
-        print(f"R-Squared: {r2}")
-
-        return y_test_rescaled, y_pred_rescaled
-
-    def plot_training_loss(self):
+    @staticmethod
+    def plot_loss(history):
         """
-        Plot training loss over epochs.
+        Plot training and validation loss over epochs.
         """
-        if self.history:
-            plt.plot(self.history.history['loss'], label='Training Loss')
-            plt.xlabel('Epochs')
-            plt.ylabel('Loss')
-            plt.title('Model Training Loss')
-            plt.legend()
-            plt.show()
-        else:
-            print("No training history available to plot.")
-
-    def plot_predictions(self, y_test_rescaled, y_pred_rescaled):
-        """
-        Plot actual vs. predicted values.
-        """
-        plt.scatter(y_test_rescaled, y_pred_rescaled, alpha=0.5)
-        plt.plot([y_test_rescaled.min(), y_test_rescaled.max()],
-                 [y_test_rescaled.min(), y_test_rescaled.max()], 'r--')  # Perfect prediction line
-        plt.xlabel('Actual Rainfall')
-        plt.ylabel('Predicted Rainfall')
-        plt.title('Actual vs. Predicted Rainfall')
+        plt.figure(figsize=(14, 7))
+        plt.plot(history.history['loss'], label='Training Loss')
+        plt.plot(history.history['val_loss'], label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training and Validation Loss')
+        plt.legend()
         plt.show()
 
 
-# Usage Example
+# Step 5: Forecaster
+class Forecaster:
+    def __init__(self, model):
+        self.model = model
+
+    def forecast(self, last_values, future_dates, update_last_values):
+        future_predictions = []
+        for _ in range(len(future_dates)):
+            # Reshape last_values to (samples=1, timesteps=1, features=2)
+            reshaped_last_values = last_values.reshape((1, 1, last_values.shape[1]))
+            future_pred = self.model.predict(reshaped_last_values)
+            future_predictions.append(future_pred[0][0])  # Extract scalar value
+            # Update last_values with the new prediction
+            last_values = update_last_values(last_values, future_pred[0][0])
+        return future_predictions
+
+    @staticmethod
+    def visualize_forecast(df, forecast_df):
+        """
+        Plot historical and forecasted rainfall.
+        """
+        plt.figure(figsize=(14, 7))
+        plt.plot(df.index, df['Rainfall'], color='blue', label='Historical Rainfall')
+        plt.plot(forecast_df.index, forecast_df['Forecasted_Rainfall'], color='red', linestyle='--', label='Forecasted Rainfall')
+        plt.xlabel('Date')
+        plt.ylabel('Rainfall')
+        plt.title('Historical vs Forecasted Rainfall')
+        plt.legend()
+        plt.show()
+
+
+# Step 6: Feature Update Function
+def update_last_values(last_values, new_prediction):
+    # Update last_values with the new prediction for sequential forecasting
+    return np.array([[last_values[0][1], new_prediction]])
+
+
+
+# Step 7: Main Execution
 if __name__ == "__main__":
-    # Initialize the predictor
-    predictor = RainfallPredictor(file_path='dataset/raw_dataset/merged_data_timeserie.csv')
+    # Specify the file path for the data
+    file_path = 'dataset/raw_dataset/merged_data_timeserie.csv'
 
-    # Preprocess the data
-    X_train, X_test, y_train, y_test = predictor.load_and_preprocess_data()
+    # Load and preprocess data
+    data_loader = ComponentFactory.create_data_loader(file_path)
+    X_train, X_test, y_train, y_test, df = data_loader.load_and_preprocess_data()
 
-    # Build the model
-    predictor.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+    # Create components using the factory
+    preprocessor = ComponentFactory.create_data_preprocessor()
+    model_builder = ComponentFactory.create_model_builder()
+
+    # Prepare data
+    X_train_LSTM, X_test_LSTM = preprocessor.prepare_data(X_train, X_test)
+
+    # Build and compile model
+    model = model_builder.build_lstm_model((X_train_LSTM.shape[1], X_train_LSTM.shape[2]))
 
     # Train the model
-    predictor.train(X_train, y_train, epochs=20)
+    trainer = ComponentFactory.create_trainer(model)
+    history = trainer.train(X_train_LSTM, y_train, epochs=50)
 
     # Evaluate the model
-    y_test_rescaled, y_pred_rescaled = predictor.evaluate(X_test, y_test)
+    mse, y_pred = trainer.evaluate(X_test_LSTM, y_test)
 
-    # Visualize results
-    predictor.plot_training_loss()
-    predictor.plot_predictions(y_test_rescaled, y_pred_rescaled)
+    # Plot training and validation loss
+    trainer.plot_loss(history)
+
+    # Forecast future rainfall
+    forecaster = ComponentFactory.create_forecaster(model)
+
+    # Generate future dates
+    last_date = df.index[-1]
+    num_days_to_forecast = 30  # Number of days to forecast
+    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=num_days_to_forecast, freq='D')
+
+    # Define the `update_last_values` function
+    def update_last_values(last_values, new_prediction):
+        # Update the last values with the new prediction for sequential forecasting
+        return np.array([[last_values[0][1], new_prediction]])
+
+    # Prepare last known values for forecasting
+    last_values = np.array([[df['minTemp'].iloc[-1], df['Rainfall'].iloc[-1]]])
+
+    # Perform forecasting
+    future_predictions = forecaster.forecast(last_values, future_dates, update_last_values)
+
+    # Create forecast DataFrame
+    forecast_df = pd.DataFrame(data={'Date': future_dates, 'Forecasted_Rainfall': future_predictions})
+    forecast_df.set_index('Date', inplace=True)
+
+    # Visualize forecast
+    forecaster.visualize_forecast(df, forecast_df)
